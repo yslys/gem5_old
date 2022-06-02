@@ -36,6 +36,90 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+
+// How is intel instruction format organized?
+// https://datacadamia.com/lang/assembly/intel/modrm
+// |Instruction Prefixes|Opcode|ModR/M|SIB|Displacement|Immediate|
+//   Instruction Prefixes: Each prefix is 1 byte, can have >1 prefixes.
+//   Opcode: 1-, 2- or 3-byte opcode.
+//   ModR/M: 1 byte (if required).    
+//          |7 Mod 6|5 Reg/Opcode 3|2 R/M 0|
+//   SIB: 1 byte (if required).
+//   Displacement: address displacement of 1, 2 or 4 bytes or none.
+//   Immediate: Immediate data of 1, 2 or 4 bytes or none.
+
+
+// X87 instructions begin with an opcode byte in the range 0xD8 to 0xDF.
+// i.e. 0b11011000 to 0b11011111. Both has top 5 bits being 0b11011, i.e. 0x1B.
+// Now we can find "0x1B", which means the following opcodes have top 5 bits
+// being 0x1B. Since 1-byte opcode has 8 bits, we then need to check the rest
+// 3 bits.
+
+// Before continuing, need to understand ModRM field.
+// The opcode can be followed by a mode-register-memory (ModRM) byte, which
+// further describes the operation and/or operands. 
+// Hence, ModRM is 1-byte long.
+// ModRM may also be followed by a scale-index-base (SIB) byte, which is used
+// to specify indexed register-indirect forms of memory addressing.
+
+// http://amd-dev.wpengine.netdna-cdn.com/wordpress/media/2008/10/24594_APM_v3.pdf
+// Check page 443, Table A-15.
+// Take a look at instruction FSUB and FSUBR:
+// FSUB: the index 4 of ModRM reg Field is set - 0b00001000
+// FSUBR: the index 5 of ModRM reg Field is set - 0b00000100
+// Since 
+// FSUB and FSUBR are represented by opcodes 0xD8 and 0xDC, ie. the cases 0x0 and 0x4.
+//
+
+
+
+// The following code describes all the possiblities of the 8-bit opcode with
+// the first 5 bits being 0x1B (0b11011). That is why we can see it starts with
+// "0x1B: decode OPCODE_OP_BOTTOM3 ...". Indicating that we have decoded the
+// first 5 bits of the opcode. Then inside that curly brace, we need to handle
+// all the possibilities of the rest 3 bits.
+// That is why we can see it follows by "0x0", "0x1" all the way to "0x7", since
+// we need to cover those 3 bits of opcode.
+// Then, inside each case (out of 8 cases), we can see there are 8 cases, which
+// means we handle the following 3 bits right after the opcode. Such 3 bits lies
+// in the ModRM reg Feild, hence, those 3 bits are the starting 3 bits of ModRM.
+
+// If we look deeper, for instance, 0x1B -> 0x1 -> 0x2, we can see that there is
+// a new case "0x3", but we cannot find 0x1 or 0x2, etc.. This means we are 
+// trying to decode more bits (note that we have decoded opcode, and ModRM) in 
+// the field right after ModRM, which is SIB (check previous comments for more 
+// details), and not all instructions requires SIB field. That is why we can 
+// only see 0x3, but cannot see 0x1 or 0x2.
+
+// Now, I believe you have a basic understanding of how the code handles all
+// instructions supported. Then comes a new question: how do we define all those
+// cases? Based on what?
+// The answer is - based on the Intel/AMD64 Architecture Programmer's Manual. In
+// other words, it is already defined by the hardware companies.
+// Hence, we need to refer to the manual:
+// http://amd-dev.wpengine.netdna-cdn.com/wordpress/media/2008/10/24594_APM_v3.pdf
+
+// Now, let's turn to page 443, Table A-15: x87 Opcodes and ModRM Extensions.
+// On the left-most column, it shows the opcode, starting from D8, to DF on the 
+// next few pages.
+
+// Consider the instruction FSUB:
+// Note: DX+ModRM/Y,Z... means a specific instruction is defined with opcode DX,
+//       and such instruction has ModRM field in Yth,Zth column(s).
+//       The instruction on the first row (starts with !11) means "by default";
+//       But the actual instruction lies in the corresponding "11" rows.
+// It is defined with more than 1 opcodes: D8+ModRM/4, DC+ModRM/4,5.
+// D8 corresponds to 0x0 of the rest 3 bits. DC corresponds to 0x4 of the rest 3 bits.
+// First let's focus on FSUB with opcode being D8 (p. 443):
+//   D8 corresponds to 0x0 of the rest 3 bits.
+//   Since it is in the 4th column of ModRM: 
+//      0x1B -> 0x0 (D8) -> 0x4 (4th column) "Inst::FSUB1(Ed);"
+// Then, let's focus on FSUB with opcode being DC (p. 447): 
+//   DC corresponds to 0x4 of the rest 3 bits.
+//   Since we can find FSUB in 4th(by default) and 5th column:
+//      0x1B -> 0x4 (DC) -> 0x4 (4th column) "default: Inst::FSUB2(Mq);"
+//      0x1B -> 0x4 (DC) -> 0x5 (5th column) "0x3: Inst::FSUB2(Eq);"
+
 format WarnUnimpl {
     0x1B: decode OPCODE_OP_BOTTOM3 default Inst::UD2() {
         0x0: decode MODRM_REG {
