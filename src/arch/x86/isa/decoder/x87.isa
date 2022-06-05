@@ -65,11 +65,6 @@
 // http://amd-dev.wpengine.netdna-cdn.com/wordpress/media/2008/10/24594_APM_v3.pdf
 // Check page 443, Table A-15.
 // Take a look at instruction FSUB and FSUBR:
-// FSUB: the index 4 of ModRM reg Field is set - 0b00001000
-// FSUBR: the index 5 of ModRM reg Field is set - 0b00000100
-// Since 
-// FSUB and FSUBR are represented by opcodes 0xD8 and 0xDC, ie. the cases 0x0 and 0x4.
-//
 
 
 
@@ -122,16 +117,18 @@
 
 format WarnUnimpl {
     0x1B: decode OPCODE_OP_BOTTOM3 default Inst::UD2() {
+        // opcode: 0xD8
         0x0: decode MODRM_REG {
             0x0: Inst::FADD1(Ed);
             0x1: Inst::FMUL1(Ed);
             0x2: fcom();
             0x3: fcomp();
             0x4: Inst::FSUB1(Ed);
-            0x5: fsubr();
+            0x5: Inst::FSUBR1(Ed);
             0x6: Inst::FDIV1(Ed);
             0x7: fdivr();
         }
+        // opcode: 0xD9
         0x1: decode MODRM_REG {
             0x0: Inst::FLD(Ed);
             0x1: decode MODRM_MOD {
@@ -278,12 +275,12 @@ format WarnUnimpl {
                 default: fcomp();
             }
             0x4: decode MODRM_MOD {
-                0x3: fsubr();
+                0x3: Inst::FSUBR2(Eq);
                 default: Inst::FSUB2(Mq);
             }
             0x5: decode MODRM_MOD {
                 0x3: Inst::FSUB2(Eq);
-                default: fsubr();
+                default: Inst::FSUBR2(Mq);
             }
             0x6: decode MODRM_MOD {
                 0x3: fdivr();

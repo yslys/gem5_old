@@ -33,12 +33,19 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+
+# For each type of instruction, there are 3 different implementations:
+#       instname_R: one that only uses registers
+#       instname_M: one that reads one of the operands from the memory
+#                   using the address provided in the instruction
+#       instname_P: one that uses the address of the instruction pointer
+#                   to read the operand.
+
 microcode = '''
 def macroop FSUB1_R
 {
     subfp st(0), st(0), sti
 };
-
 
 def macroop FSUB1_M
 {
@@ -51,6 +58,24 @@ def macroop FSUB1_P
     rdip t7
     ldfp ufp1, seg, riprel, disp
     subfp st(0), st(0), ufp1
+};
+
+def macroop FSUBR1_R
+{
+    subfp st(0), sti, st(0)
+};
+
+def macroop FSUBR1_M
+{
+    ldfp ufp1, seg, sib, disp
+    subfp st(0), ufp1, st(0)
+};
+
+def macroop FSUBR1_P
+{
+    rdip t7
+    ldfp ufp1, seg, riprel, disp
+    subfp st(0), ufp1, st(0)
 };
 
 def macroop FSUB2_R
@@ -70,6 +95,25 @@ def macroop FSUB2_P
     ldfp ufp1, seg, riprel, disp
     subfp st(0), st(0), ufp1
 };
+
+def macroop FSUBR2_R
+{
+    subfp sti, st(0), sti
+};
+
+def macroop FSUBR2_M
+{
+    ldfp ufp1, seg, sib, disp
+    subfp st(0), ufp1, st(0)
+};
+
+def macroop FSUBR2_P
+{
+    rdip t7
+    ldfp ufp1, seg, riprel, disp
+    subfp st(0), ufp1, st(0)
+};
+
 
 def macroop FSUBP
 {
