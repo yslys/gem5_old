@@ -219,8 +219,9 @@ In generated code: there is an one line comment before each instruction:
 To make it more readable:
 ```
 StoreCond::sc_d((
-    ['Mem = Rs2;', 
-     'Rd = result;'
+    [
+        'Mem = Rs2;', 
+        'Rd = result;'
     ], 
     {
         'mem_flags': 'LLSC', 
@@ -241,11 +242,12 @@ StoreCond::sc_d((
 + Where does this one-line comment come from?
     + In ```arch/riscv/isa/decoder.isa```, search for ```StoreCond::sc_d```, we can see the following:
 ```
-0x3: StoreCond::sc_d({{
-    Mem = Rs2;
-}}, {{
-    Rd = result;
-}}, mem_flags=LLSC, inst_flags=IsStoreConditional);
+0x3: StoreCond::sc_d(
+    {{ Mem = Rs2; }}, 
+    {{ Rd = result; }}, 
+    mem_flags=LLSC, 
+    inst_flags=IsStoreConditional
+);
 ```
 
 + How does ISA parser in gem5 interprets this decode format and translate it into C++ code?
@@ -267,13 +269,15 @@ StoreCond::sc_d((
     + The corresponding code in decoder.isa is shown below:
 
 ```
-0x0: AtomicMemOp::amoadd_d({{
-    Rd_sd = Mem_sd;
-}}, {{
-    TypedAtomicOpFunctor<int64_t> *amo_op =
-            new AtomicGenericOp<int64_t>(Rs2_sd,
-                    [](int64_t* b, int64_t a){ *b += a; });
-}}, mem_flags=ATOMIC_RETURN_OP);
+0x0: AtomicMemOp::amoadd_d(
+    {{ Rd_sd = Mem_sd;}}, 
+    {{
+        TypedAtomicOpFunctor<int64_t> *amo_op =
+                new AtomicGenericOp<int64_t>(Rs2_sd,
+                        [](int64_t* b, int64_t a){ *b += a; });
+    }}, 
+    mem_flags=ATOMIC_RETURN_OP
+);
 ```
 
 + It contains 
