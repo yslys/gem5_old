@@ -63,8 +63,8 @@ class CopyEngine : public PciDevice
     class CopyEngineChannel : public Drainable, public Serializable
     {
       private:
-        DmaPort cePort;
-        CopyEngine *ce;
+        DmaPort cePort; /* copy engine port */
+        CopyEngine *ce; /* copy engine */
         copy_engine_reg::ChanRegs  cr;
         int channelId;
         copy_engine_reg::DmaDesc *curDmaDesc;

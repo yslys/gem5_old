@@ -341,6 +341,7 @@ TLB::translate(const RequestPtr &req, ThreadContext *tc,
 
     if (FullSystem) {
         PrivilegeMode pmode = getMemPriv(tc, mode);
+        /* Supervisor Address Translation and Protection (satp) Register */
         SATP satp = tc->readMiscReg(MISCREG_SATP);
         if (pmode == PrivilegeMode::PRV_M || satp.mode == AddrXlateMode::BARE)
             req->setFlags(Request::PHYSICAL);
@@ -415,7 +416,13 @@ TLB::translateTiming(const RequestPtr &req, ThreadContext *tc,
                      BaseMMU::Translation *translation, BaseMMU::Mode mode)
 {
     bool delayed;
+    /* make sure @translation (DataTranslation object) is not NULL */
     assert(translation);
+    /**
+     * @delayed: in translate() it is regarded as a reference, will be modified
+     *           If TLB miss, then delayed=true; else =false.
+     * translation->finish() is defined in src/cpu/translation.hh
+     */
     Fault fault = translate(req, tc, translation, mode, delayed);
     if (!delayed)
         translation->finish(fault, req, tc, mode);

@@ -522,6 +522,11 @@ TimingSimpleCPU::handleWritePacket()
     return dcache_pkt == NULL;
 }
 
+
+/**
+ * @brief store operation to memory.
+ *        write @data of length @size bytes to address at @addr.
+ */
 Fault
 TimingSimpleCPU::writeMem(uint8_t *data, unsigned size,
                           Addr addr, Request::Flags flags, uint64_t *res,
@@ -530,29 +535,46 @@ TimingSimpleCPU::writeMem(uint8_t *data, unsigned size,
     SimpleExecContext &t_info = *threadInfo[curThread];
     SimpleThread* thread = t_info.thread;
 
+    /* a byte array (len=size) that holds the data to be written */
     uint8_t *newData = new uint8_t[size];
+    /* obtain the current program counter */
     const Addr pc = thread->pcState().instAddr();
+    /* obtain the cache-line size */
     unsigned block_size = cacheLineSize();
+    /* MMU mode is write */
     BaseMMU::Mode mode = BaseMMU::Write;
 
+    /* @data is the data to be written, if it is NULL, then it is used for a
+       cache block cleaning request, else, it is written into @newData byte
+       array */
     if (data == NULL) {
         assert(flags & Request::STORE_NO_DATA);
         // This must be a cache block cleaning request
         memset(newData, 0, size);
     } else {
+        /* copy the data into the @newData byte array */
         memcpy(newData, data, size);
     }
 
     if (traceData)
         traceData->setMem(addr, size, flags);
 
+    /* std::make_shared<T>(): allocates and constructs an object of type T
+     * passing args to its constructor, and returns an object of type
+     * shared_ptr<T> that owns and stores a pointer to it (with a use count of
+     * 1). This function uses ::new to allocate storage for the object.
+     *
+     * Request is a constructor that constructs a Request object
+     */
     RequestPtr req = std::make_shared<Request>(
         addr, size, flags, dataRequestorId(), pc, thread->contextId());
-    req->setByteEnable(byte_enable);
+    req->setByteEnable(byte_enable); // set byte-enable mask for writes
 
-    req->taskId(taskId());
+    req->taskId(taskId()); // set request's taskId to be current CPU taskId
 
+    /* @split_addr is the rounded-down addr that is divisible by block_size */
     Addr split_addr = roundDown(addr + size - 1, block_size);
+    /* @split_addr can be either less than @addr, or greater than @addr */
     assert(split_addr <= addr || split_addr - addr < block_size);
 
     _status = DTBWaitResponse;
@@ -560,18 +582,61 @@ TimingSimpleCPU::writeMem(uint8_t *data, unsigned size,
     // TODO: TimingSimpleCPU doesn't support arbitrarily long multi-line mem.
     // accesses yet
 
+    /* There are two possibilities of @split_addr and @addr
+     * If @split_addr > @addr, then the data to be transferred cross two
+     *    separate cache lines: [addr, split_addr-1], [split_addr, addr+size-1]
+     * If @split_addr < @addr, then the data to be transferred stays in one
+     *     single cache line: [addr, addr+size-1]
+     */
     if (split_addr > addr) {
+        /* Recall that the original request has @addr and @size, now we need to
+           split it into two separate requests */
         RequestPtr req1, req2;
         assert(!req->isLLSC() && !req->isSwap());
+        /* Split the original request into 2 parts, separated by split_addr */
         req->splitOnVaddr(split_addr, req1, req2);
 
+        /* Intuitively, what we need to do next is to transfer req1, then req2.
+         * Below constructs a SplitTranslationState, with the number of
+         * outstanding translations to be 2.
+         *
+         * src/cpu/translation.hh
+         *
+         * After this constructor,
+         *      state->req = req;
+         *      state->_sreqLow = req1
+         *      state->_sreqHigh = req2
+         *      state->_data = newData (the temp buffer to store the data)
+         *      state->_res = res (result)
+         *      state->_mode = mode (BaseMMU::Write)
+         *      state->faults[0] = state->faults[1] = gem5::NoFault = nullptr
+         *      Made sure that @mode is either BaseMMU::Read or BaseMMU::Write
+         */
         WholeTranslationState *state =
             new WholeTranslationState(req, req1, req2, newData, res, mode);
+
+        /* DataTranslation class represents part of a data address translation.
+         * @this: xc (execution context), @state: WholeTranslationState *,
+         * The 3rd param is the index, 0 means req1, 1 means req2.
+         *
+         * Hence, we basically creates two DataTranslation's that represent
+         * req1 and req2.
+         */
         DataTranslation<TimingSimpleCPU *> *trans1 =
             new DataTranslation<TimingSimpleCPU *>(this, state, 0);
         DataTranslation<TimingSimpleCPU *> *trans2 =
             new DataTranslation<TimingSimpleCPU *>(this, state, 1);
 
+        /* mmu: BaseMMU,
+         * translateTiming(): return getTlb(mode)->translateTiming()
+         * TLB::translateTiming(): defined in src/arch/riscv/tlb.cc
+         * @req1: RequestPtr
+         * @thread->getTC(): get the current thread context
+         * @trans1: DataTranslation<TimingSimpleCPU *> *
+         * @mode: BaseMMU::Write
+         *
+         * More detailed comments, refer to that file
+         */
         thread->mmu->translateTiming(req1, thread->getTC(), trans1, mode);
         thread->mmu->translateTiming(req2, thread->getTC(), trans2, mode);
     } else {
