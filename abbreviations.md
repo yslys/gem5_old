@@ -837,13 +837,7 @@ Store-conditional instruction call graph:
                 + If request is uncacheable, then ```req->setExtraData(2)```, return true
             + if ```do_access == true```, then ```handleWritePacket()``` 
 
-./cpu/simple/atomic.cc:                    req->setExtraData(*res);
-./cpu/simple/timing.cc:            req->setExtraData(*res);
-./mem/ruby/system/HTMSequencer.cc:                pkt->req->setExtraData(0);
-./mem/ruby/system/Sequencer.cc:                seq_req.pkt->req->setExtraData(success ? 1 : 0);
-./mem/cache/base.cc:        pkt->req->setExtraData(0);
-./mem/cache/cache.cc:                tgt_pkt->req->setExtraData(0);
-./mem/cache/cache_blk.hh:            req->setExtraData(success ? 1 : 0);
-./mem/request.hh:    setExtraData(uint64_t extraData)
-./mem/abstract_mem.cc:        req->setExtraData(allowStore ? 1 : 0);
-./mem/abstract_mem.hh:                req->setExtraData(0);
+
+
+src/arch/riscv/regs/int.hh
+mem_flags: not LLSC

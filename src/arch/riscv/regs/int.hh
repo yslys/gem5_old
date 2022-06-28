@@ -56,7 +56,7 @@ namespace RiscvISA
 {
 
 const int NumIntArchRegs = 32;
-const int NumMicroIntRegs = 1;
+const int NumMicroIntRegs = 1+8;
 const int NumIntRegs = NumIntArchRegs + NumMicroIntRegs;
 
 // Semantically meaningful register indices
@@ -66,6 +66,7 @@ const int ThreadPointerReg = 4;
 const int ReturnValueReg = 10;
 const std::vector<int> ArgumentRegs = {10, 11, 12, 13, 14, 15, 16, 17};
 const int AMOTempReg = 32;
+const int ENQCMDTmpReg_0 = 33;
 
 const int SyscallNumReg = 17;
 
