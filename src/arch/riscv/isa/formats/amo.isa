@@ -386,6 +386,13 @@ def template LoadReservedCompleteAcc {{
 
         getMemLE(pkt, Mem, traceData);
 
+        //std::array<uint8_t, 64> tmp = {23};
+
+        //DPRINTF(S12Regs,
+        //    "Write value 23 to 512 reg, i.e. 1st element is 23\n", tmp);
+        //xc->setS12RegOperand(tmp);
+
+
         %(memacc_code)s;
         %(op_wb)s;
 
@@ -402,6 +409,10 @@ def template StoreCondCompleteAcc {{
         // RISC-V has the opposite convention gem5 has for success flags,
         // so we invert the result here.
         uint64_t result = !pkt->req->getExtraData();
+
+        //std::array<uint8_t, 64> tmp = xc->readS12RegOperand();
+        //DPRINTF(S12Regs,
+        // "Value obtained from 512 reg is: %x.\nShould be 23\n", tmp.at(0));
 
         %(postacc_code)s;
         %(op_wb)s;
@@ -514,4 +525,219 @@ def format AtomicMemOp(memacc_code, amoop_code, postacc_code={{ }},
     exec_output += AtomicMemOpRMWExecute.subst(rmw_iop) \
                  + AtomicMemOpRMWInitiateAcc.subst(rmw_iop) \
                  + AtomicMemOpRMWCompleteAcc.subst(rmw_iop)
+}};
+
+// LR_Q templates (512-bit operation)
+
+// Load value at address Rs1 into a temporary register (S12Reg)
+// The actual write to S12Reg happens in completeAcc()
+def template LoadReservedQInitiateAcc {{
+    Fault
+    %(class_name)s::%(class_name)sMicro::initiateAcc(ExecContext *xc,
+        Trace::InstRecord *traceData) const
+    {
+        Addr EA;
+
+        uint64_t Rs1 = 0;
+        std::array<uint8_t, 64> Mem = {};
+
+        Rs1 = xc->readIntRegOperand(this, 0);
+
+        EA = Rs1;
+        DPRINTF(S12Regs, "address to be read from: %lu\n", Rs1);
+
+        return initiateMemRead(xc, traceData, EA, Mem, memAccessFlags);
+    }
+}};
+
+def template LoadReservedQCompleteAcc {{
+    Fault
+    %(class_name)s::%(class_name)sMicro::completeAcc(PacketPtr pkt,
+        ExecContext *xc, Trace::InstRecord *traceData) const
+    {
+        int64_t Rd = 0;
+        std::array<uint8_t, 64> Mem = {};
+
+        // obtain the PacketPtr->data of size typeof(Mem)
+        // i.e. if Mem is of type int8_t [64], then sizeof(Mem)=64
+        getMemLE(pkt, Mem, traceData);
+        DPRINTF(S12Regs, "Write to 512 reg\n");
+        xc->setS12RegOperand(Mem);
+
+        Rd = 0;
+
+        xc->setIntRegOperand(this, 0, Rd);
+        if (traceData) { traceData->setData(Rd); }
+
+        return NoFault;
+    }
+}};
+
+def template LoadReservedQExecute {{
+    Fault
+    %(class_name)s::%(class_name)sMicro::execute(
+        ExecContext *xc, Trace::InstRecord *traceData) const
+    {
+        Addr EA;
+        int64_t Rd = 0;
+        uint64_t Rs1 = 0;
+        std::array<uint8_t, 64> Mem = {};
+
+        Rs1 = xc->readIntRegOperand(this, 0);
+        EA = Rs1;
+
+        Fault fault = readMemAtomicLE(xc, traceData, EA, Mem, memAccessFlags);
+        if (fault != NoFault)
+            return fault;
+
+        xc->setS12RegOperand(Mem);
+
+        Rd = 0;
+        xc->setIntRegOperand(this, 0, Rd);
+        if (traceData) { traceData->setData(Rd); }
+
+        return NoFault;
+    }
+}};
+
+// SC_Q templates (512-bit operation)
+// Original SC writes a word in rs2 to the address in rs1, provided a valid
+// reservation still exists on that address. SC writes zero to rd on success or
+// a nonzero code on failure.
+
+// In our SC_Q, we will ignore rs2. We use rs1 as destination address only.
+// We will also use another temporary 512-bit register to replace rs2.
+// Hence, write the value in temporary 512-bit register to address in rs1.
+def template StoreCondQInitiateAcc {{
+    Fault
+    %(class_name)s::%(class_name)sMicro::initiateAcc(ExecContext *xc,
+        Trace::InstRecord *traceData) const
+    {
+        Addr EA;
+        uint64_t Rs1 = 0;
+        std::array<uint8_t, 64> Mem = {};
+
+        Rs1 = xc->readIntRegOperand(this, 0);
+        DPRINTF(S12Regs, "read 64-byte data from 512 reg\n");
+        Mem = xc->readS12RegOperand();
+        DPRINTF(S12Regs, "value read (id) is: %lu\n", Mem[0]);
+        // after the code above, S12Reg is reset to be 0.
+
+        EA = Rs1;
+        DPRINTF(S12Regs, "address to be written to: %lu\n", Rs1);
+
+        Fault fault = writeMemTimingLE(xc, traceData, Mem, EA, memAccessFlags,
+                                        nullptr);
+        if (fault != NoFault)
+            return fault;
+
+        return NoFault;
+    }
+}};
+
+def template StoreCondQCompleteAcc {{
+    Fault %(class_name)s::%(class_name)sMicro::completeAcc(Packet *pkt,
+          ExecContext *xc, Trace::InstRecord *traceData) const
+    {
+        uint64_t Rd = 0;
+
+        // RISC-V has the opposite convention gem5 has for success flags,
+        // so we invert the result here.
+        uint64_t result = !pkt->req->getExtraData(); // modified by device
+        DPRINTF(S12Regs, "SC_Q_completeAcc: result: %lu\n", result);
+        Rd = result;
+        xc->setIntRegOperand(this, 0, Rd);
+
+        if (traceData) { traceData->setData(Rd); }
+
+        return NoFault;
+    }
+}};
+
+def template StoreCondQExecute {{
+    Fault %(class_name)s::%(class_name)sMicro::execute(ExecContext *xc,
+        Trace::InstRecord *traceData) const
+    {
+        Addr EA;
+        uint64_t result;
+        uint64_t Rd = 0;
+        uint64_t Rs1 = 0;
+        std::array<uint8_t, 64> Mem = {};
+
+        Rs1 = xc->readIntRegOperand(this, 0);
+
+        EA = Rs1;
+        Mem = xc->readS12RegOperand();
+
+        Fault fault = writeMemAtomicLE(xc, traceData, Mem, EA, memAccessFlags,
+                                        &result);
+        if (fault != NoFault)
+            return fault;
+
+        // RISC-V has the opposite convention gem5 has for success flags,
+        // so we invert the result here.
+        result = !result;
+        Rd = result;
+
+        xc->setIntRegOperand(this, 0, Rd);
+        if (traceData) { traceData->setData(Rd); }
+
+        return NoFault;
+    }
+}};
+
+def format LoadReservedQ(memacc_code={{ }}, postacc_code={{ }},
+        ea_code={{EA = Rs1;}}, mem_flags=[], inst_flags=[]) {{
+    macro_ea_code = ''
+    macro_inst_flags = []
+    macro_iop = InstObjParams(name, Name, 'LoadReservedQ', macro_ea_code,
+                              macro_inst_flags)
+    header_output = LRSCDeclare.subst(macro_iop)
+    decoder_output = LRSCMacroConstructor.subst(macro_iop)
+    decode_block = BasicDecode.subst(macro_iop)
+
+    exec_output = ''
+
+    mem_flags = makeList(mem_flags)
+    inst_flags = makeList(inst_flags)
+    iop = InstObjParams(name, Name, 'LoadReservedQMicro',
+        {'ea_code': ea_code, 'memacc_code': memacc_code,
+        'postacc_code': postacc_code}, inst_flags)
+    iop.constructor += '\n\tmemAccessFlags = memAccessFlags | ' + \
+        '|'.join(['Request::%s' % flag for flag in mem_flags]) + ';'
+
+    header_output += LRSCMicroDeclare.subst(iop)
+    decoder_output += LRSCMicroConstructor.subst(iop)
+    decode_block += BasicDecode.subst(iop)
+    exec_output += LoadReservedQExecute.subst(iop) \
+        + LoadReservedQInitiateAcc.subst(iop) \
+        + LoadReservedQCompleteAcc.subst(iop)
+}};
+
+def format StoreCondQ(memacc_code={{ }}, postacc_code={{ }},
+        ea_code={{EA = Rs1;}}, mem_flags=[], inst_flags=[]) {{
+    macro_ea_code = ''
+    macro_inst_flags = []
+    macro_iop = InstObjParams(name, Name, 'StoreCondQ', macro_ea_code,
+                              macro_inst_flags)
+    header_output = LRSCDeclare.subst(macro_iop)
+    decoder_output = LRSCMacroConstructor.subst(macro_iop)
+    decode_block = BasicDecode.subst(macro_iop)
+
+    exec_output = ''
+
+    mem_flags = makeList(mem_flags)
+    inst_flags = makeList(inst_flags)
+    iop = InstObjParams(name, Name, 'StoreCondQMicro',
+        {'ea_code': ea_code, 'memacc_code': memacc_code,
+        'postacc_code': postacc_code}, inst_flags)
+    iop.constructor += '\n\tmemAccessFlags = memAccessFlags | ' + \
+        '|'.join(['Request::%s' % flag for flag in mem_flags]) + ';'
+
+    header_output += LRSCMicroDeclare.subst(iop)
+    decoder_output += LRSCMicroConstructor.subst(iop)
+    decode_block += BasicDecode.subst(iop)
+    exec_output += StoreCondQExecute.subst(iop) \
+        + StoreCondQInitiateAcc.subst(iop) \
+        + StoreCondQCompleteAcc.subst(iop)
 }};

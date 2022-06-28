@@ -77,6 +77,26 @@ class LoadReservedMicro : public RiscvMicroInst
         Addr pc, const loader::SymbolTable *symtab) const override;
 };
 
+// load-reserved 512-bit
+class LoadReservedQ : public RiscvMacroInst
+{
+  protected:
+    using RiscvMacroInst::RiscvMacroInst;
+
+    std::string generateDisassembly(
+        Addr pc, const loader::SymbolTable *symtab) const override;
+};
+
+class LoadReservedQMicro : public RiscvMicroInst
+{
+  protected:
+    Request::Flags memAccessFlags;
+    using RiscvMicroInst::RiscvMicroInst;
+
+    std::string generateDisassembly(
+        Addr pc, const loader::SymbolTable *symtab) const override;
+};
+
 // store-cond
 class StoreCond : public RiscvMacroInst
 {
@@ -88,6 +108,26 @@ class StoreCond : public RiscvMacroInst
 };
 
 class StoreCondMicro : public RiscvMicroInst
+{
+  protected:
+    Request::Flags memAccessFlags;
+    using RiscvMicroInst::RiscvMicroInst;
+
+    std::string generateDisassembly(
+        Addr pc, const loader::SymbolTable *symtab) const override;
+};
+
+// store-cond 512-bit
+class StoreCondQ : public RiscvMacroInst
+{
+  protected:
+    using RiscvMacroInst::RiscvMacroInst;
+
+    std::string generateDisassembly(
+        Addr pc, const loader::SymbolTable *symtab) const override;
+};
+
+class StoreCondQMicro : public RiscvMicroInst
 {
   protected:
     Request::Flags memAccessFlags;

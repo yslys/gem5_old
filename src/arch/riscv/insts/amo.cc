@@ -87,6 +87,34 @@ LoadReservedMicro::generateDisassembly(
     return ss.str();
 }
 
+// load-reserved 512-bit
+std::string
+LoadReservedQ::generateDisassembly(
+        Addr pc, const loader::SymbolTable *symtab) const
+{
+    std::stringstream ss;
+    ss << mnemonic;
+    if (AQ || RL)
+        ss << '_';
+    if (AQ)
+        ss << "aq";
+    if (RL)
+        ss << "rl";
+    ss << ' ' << registerName(RegId(IntRegClass, RD)) << ", ("
+            << registerName(RegId(IntRegClass, RS1)) << ')';
+    return ss.str();
+}
+
+std::string
+LoadReservedQMicro::generateDisassembly(
+        Addr pc, const loader::SymbolTable *symtab) const
+{
+    std::stringstream ss;
+    ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", ("
+            << registerName(srcRegIdx(0)) << ')';
+    return ss.str();
+}
+
 // store-conditional
 std::string
 StoreCond::generateDisassembly(
@@ -108,6 +136,36 @@ StoreCond::generateDisassembly(
 
 std::string
 StoreCondMicro::generateDisassembly(
+        Addr pc, const loader::SymbolTable *symtab) const
+{
+    std::stringstream ss;
+    ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", "
+            << registerName(srcRegIdx(1)) << ", ("
+            << registerName(srcRegIdx(0)) << ')';
+    return ss.str();
+}
+
+// store-conditional 512-bit
+std::string
+StoreCondQ::generateDisassembly(
+        Addr pc, const loader::SymbolTable *symtab) const
+{
+    std::stringstream ss;
+    ss << mnemonic;
+    if (AQ || RL)
+        ss << '_';
+    if (AQ)
+        ss << "aq";
+    if (RL)
+        ss << "rl";
+    ss << ' ' << registerName(RegId(IntRegClass, RD)) << ", "
+            << registerName(RegId(IntRegClass, RS2)) << ", ("
+            << registerName(RegId(IntRegClass, RS1)) << ')';
+    return ss.str();
+}
+
+std::string
+StoreCondQMicro::generateDisassembly(
         Addr pc, const loader::SymbolTable *symtab) const
 {
     std::stringstream ss;

@@ -183,6 +183,30 @@ class CheckerCPU : public BaseCPU, public ExecContext
         return thread->readIntReg(reg.index());
     }
 
+    /**
+     * This function returns a malloc'ed 512-bit value. Needs to be freed after
+     * obtaining the value.
+     */
+    std::array<uint8_t, 64>
+    readS12RegOperand()
+    {
+        // TODO: for simplicity, we only have one 512-bit register for now
+        return thread->readS12Reg();
+    }
+
+    /**
+     * This function takes in a malloc'ed 512-bit value, and copy the value to
+     * the S12Reg defined in class SimpleThread.
+     *
+     * After this function terminates, the @val is freed already.
+     */
+    void
+    setS12RegOperand(std::array<uint8_t, 64> val)
+    {
+        // TODO: for simplicity, we only have one 512-bit register for now
+        thread->setS12Reg(val);
+    }
+
     RegVal
     readFloatRegOperandBits(const StaticInst *si, int idx) override
     {

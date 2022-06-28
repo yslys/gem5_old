@@ -157,7 +157,11 @@ class SimpleExecContext : public ExecContext
               ADD_STAT(numBranchMispred, statistics::units::Count::get(),
                        "Number of branch mispredictions"),
               ADD_STAT(statExecutedInstType, statistics::units::Count::get(),
-                       "Class of executed instruction.")
+                       "Class of executed instruction."),
+              ADD_STAT(numS12RegWrites, statistics::units::Count::get(),
+                       "Number of times the 512-bit register is written."),
+              ADD_STAT(numS12RegReads, statistics::units::Count::get(),
+                       "Number of times the 512-bit register is read.")
         {
             numCCRegReads
                 .flags(statistics::nozero);
@@ -278,6 +282,10 @@ class SimpleExecContext : public ExecContext
         // Instruction mix histogram by OpClass
         statistics::Vector statExecutedInstType;
 
+        // number of 512-bit load/store instructions
+        statistics::Scalar numS12RegWrites;
+        statistics::Scalar numS12RegReads;
+
     } execContextStats;
 
   public:
@@ -296,6 +304,32 @@ class SimpleExecContext : public ExecContext
         const RegId& reg = si->srcRegIdx(idx);
         assert(reg.is(IntRegClass));
         return thread->readIntReg(reg.index());
+    }
+
+    /**
+     * This function returns a malloc'ed 512-bit value. Needs to be freed after
+     * obtaining the value.
+     */
+    std::array<uint8_t, 64>
+    readS12RegOperand() override
+    {
+        execContextStats.numS12RegReads++;
+        // TODO: for simplicity, we only have one 512-bit register for now
+        return thread->readS12Reg();
+    }
+
+    /**
+     * This function takes in a malloc'ed 512-bit value, and copy the value to
+     * the S12Reg defined in class SimpleThread.
+     *
+     * After this function terminates, the @val is freed already.
+     */
+    void
+    setS12RegOperand(std::array<uint8_t, 64> val) override
+    {
+        execContextStats.numS12RegWrites++;
+        // TODO: for simplicity, we only have one 512-bit register for now
+        thread->setS12Reg(val);
     }
 
     /** Sets an integer register to a value. */

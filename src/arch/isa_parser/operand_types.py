@@ -127,6 +127,9 @@ class Operand(object):
     def isIntReg(self):
         return 0
 
+    def isS12Reg(self):
+        return 0
+
     def isCCReg(self):
         return 0
 
@@ -241,6 +244,7 @@ class IntRegOperand(Operand):
         }''' % (wcond, self.ctype, self.base_name, windex)
 
         return wb
+
 
 class FloatRegOperand(Operand):
     reg_class = 'FloatRegClass'

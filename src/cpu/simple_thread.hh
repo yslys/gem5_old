@@ -43,6 +43,7 @@
 #define __CPU_SIMPLE_THREAD_HH__
 
 #include <algorithm>
+#include <cstdlib> // std::malloc
 #include <vector>
 
 #include "arch/generic/htm.hh"
@@ -58,6 +59,7 @@
 #include "debug/CCRegs.hh"
 #include "debug/FloatRegs.hh"
 #include "debug/IntRegs.hh"
+#include "debug/S12Regs.hh"
 #include "debug/VecPredRegs.hh"
 #include "debug/VecRegs.hh"
 #include "mem/htm.hh"
@@ -102,6 +104,8 @@ class SimpleThread : public ThreadState, public ThreadContext
     std::vector<RegVal> vecElemRegs;
     std::vector<TheISA::VecPredRegContainer> vecPredRegs;
     std::vector<RegVal> ccRegs;
+    std::array<uint8_t, 64> s12Reg; // 64-bit register value
+
     TheISA::ISA *const isa;    // one "instance" of the current ISA.
 
     std::unique_ptr<PCStateBase> _pcState;
@@ -245,6 +249,8 @@ class SimpleThread : public ThreadState, public ThreadContext
 
     void copyArchRegs(ThreadContext *tc) override;
 
+    /// initializing those regsiters to be 0.
+    /// This function is called in constructor of SimpleThread
     void
     clearArchRegs() override
     {
@@ -257,6 +263,8 @@ class SimpleThread : public ThreadState, public ThreadContext
         for (auto &pred_reg: vecPredRegs)
             pred_reg.reset();
         std::fill(ccRegs.begin(), ccRegs.end(), 0);
+        // zero the 512-bit register
+        std::fill(s12Reg.begin(), s12Reg.end(), 0);
         isa->clear();
     }
 
@@ -272,6 +280,28 @@ class SimpleThread : public ThreadState, public ThreadContext
         DPRINTF(IntRegs, "Reading int reg %d (%d) as %#x.\n",
                 reg_idx, flatIndex, regVal);
         return regVal;
+    }
+
+    std::array<uint8_t, 64>
+    readS12Reg()
+    {
+        // copy the values in s12 reg
+        std::array<uint8_t, 64> ret = s12Reg;
+
+        // reset the s12Reg
+        std::fill(s12Reg.begin(), s12Reg.end(), 0);
+
+        // definition of S12Regs is in src/arch/SConscript
+        DPRINTF(S12Regs, "Reading 512-bit reg, and reset to 0\n");
+        return ret;
+    }
+
+    void
+    setS12Reg(std::array<uint8_t, 64> val)
+    {
+        this->s12Reg = val;
+        DPRINTF(S12Regs, "Writing 512-bit reg\n");
+        return;
     }
 
     RegVal

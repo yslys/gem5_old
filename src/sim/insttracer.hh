@@ -191,7 +191,8 @@ class InstRecord
         data.as_int = d[0];
         data_status = (DataStatus)sizeof(T);
         static_assert(sizeof(T) == DataInt8 || sizeof(T) == DataInt16 ||
-                      sizeof(T) == DataInt32 || sizeof(T) == DataInt64,
+                      sizeof(T) == DataInt32 || sizeof(T) == DataInt64 ||
+                      sizeof(T) == 512,
                       "Type T has an unrecognized size.");
     }
 
@@ -204,6 +205,7 @@ class InstRecord
     void setData(int32_t d) { setData((uint32_t)d); }
     void setData(int16_t d) { setData((uint16_t)d); }
     void setData(int8_t d)  { setData((uint8_t)d); }
+
 
     void setData(double d) { data.as_double = d; data_status = DataDouble; }
 

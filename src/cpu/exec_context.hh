@@ -89,6 +89,9 @@ class ExecContext
     /** @} */
 
 
+    virtual void setS12RegOperand(std::array<uint8_t, 64> val) = 0;
+    virtual std::array<uint8_t, 64> readS12RegOperand() = 0;
+
     /**
      * @{
      * @name Floating Point Register Interfaces

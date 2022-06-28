@@ -29,6 +29,7 @@
 #ifndef __BASE_CPRINTF_FORMATS_HH__
 #define __BASE_CPRINTF_FORMATS_HH__
 
+#include <array>
 #include <cstring>
 #include <ostream>
 #include <sstream>
@@ -72,6 +73,7 @@ struct Format
     bool getPrecision;
     bool getWidth;
 
+    // constructor
     Format() { clear(); }
 
     void
@@ -91,13 +93,31 @@ struct Format
         getPrecision = false;
         getWidth = false;
     }
+
+
+
 };
+
+
+// Overloading ostream operator "<<" for std::array<uint8_t, 64>
+static inline std::ostream&
+operator<< (std::ostream &out, std::array<uint8_t, 64> arr)
+{
+    for (int i = 0; i < 64; i++)
+        out << arr.at(i);
+    return out;
+}
 
 template <typename T>
 static inline void
 _formatChar(std::ostream &out, const T &data, Format &fmt)
 {
-    out << data;
+    // if (typeid(T) == typeid(std::array<uint8_t, 64>)) {
+    //     for (int i = 0; i < 64; i++)
+    //         out << (&data + i*8);
+    // } else {
+        out << data;
+    // }
 }
 
 template <typename T>
@@ -154,6 +174,13 @@ _formatInteger(std::ostream &out, const T &data, Format &fmt)
     if (fmt.uppercase)
         out.setf(std::ios::uppercase);
 
+    // if (std::is_same<T, std::array<uint8_t, 64>>::value ||
+    //     std::is_same<T, std::array<unsigned char, 64>>::value) {
+    //     for (int i = 0; i < 64; i++)
+    //         out << (&data + i*8);
+    // } else {
+    //     out << data;
+    // }
     out << data;
 
     out.flags(flags);
@@ -321,6 +348,13 @@ static inline void
 formatChar(std::ostream &out, unsigned long long data, Format &fmt)
 {
     _formatChar(out, (char)data, fmt);
+}
+
+static inline void
+formatChar(std::ostream &out, std::array<uint8_t, 64> data, Format &fmt)
+{
+    for (auto& i : data)
+        formatChar(out, (char)i, fmt);
 }
 
 //

@@ -315,19 +315,23 @@ TimingSimpleCPU::sendData(const RequestPtr &req, uint8_t *data, uint64_t *res,
     if (req->isHTMAbort())
         DPRINTF(HtmCpu, "htmabort htmUid=%u\n", t_info.getHtmTransactionUid());
 
+    // if mem_flags of curr inst is NO_ACCESS, i.e. not memory access
     if (req->getFlags().isSet(Request::NO_ACCESS)) {
         assert(!dcache_pkt);
         pkt->makeResponse();
         completeDataAccess(pkt);
     } else if (read) {
+        // if it is a memory read, i.e. load instruction
         handleReadPacket(pkt);
     } else {
+        // it is a memory write, i.e. store instruction
         bool do_access = true;  // flag to suppress cache access
 
         if (req->isLLSC()) {
+            // defined in src/arch/riscv/isa.cc
             do_access = thread->getIsaPtr()->handleLockedWrite(
                     req, dcachePort.cacheBlockMask);
-        } else if (req->isCondSwap()) {
+        } else if (req->isCondSwap()) { // MEM_SWAP_COND is set
             assert(res);
             req->setExtraData(*res);
         }
@@ -476,7 +480,7 @@ TimingSimpleCPU::initiateMemRead(Addr addr, unsigned size,
     _status = DTBWaitResponse;
     if (split_addr > addr) {
         RequestPtr req1, req2;
-        assert(!req->isLLSC() && !req->isSwap());
+        assert(!req->isLLSC() && !req->isSwap()); // Error
         req->splitOnVaddr(split_addr, req1, req2);
 
         WholeTranslationState *state =

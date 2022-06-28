@@ -472,8 +472,16 @@ Fault Sc_d::Sc_dMicro::completeAcc(Packet *pkt,
     // so we invert the result here.
     uint64_t result = !pkt->req->getExtraData(); // same as template
 
+    /** New comments added
+     * @pkt: Packet *
+     * @pkt->req: RequestPtr, a pointer to the original request (mem write)
+     * @getExtraData(): Accessor function for store conditional return value.
+     *                  It will return a uint64_t value.
+     */
+
+
     // %(postacc_code)s;
-    Rd = result;
+    Rd = result; /* store the result in Rd register */
     ;
     
     // %(op_wb)s;
@@ -489,4 +497,353 @@ Fault Sc_d::Sc_dMicro::completeAcc(Packet *pkt,
 ```
 
 
-Now we have gone through all three implementations (Execute, InitiateAcc, CompleteAcc), we 
+
+### How decoder decodes SC.D instruction?
+```
+SC.D (64-bit double word):
+[0:6]: Opcode: 0101111
+[7:11]: rd
+[12:14]: func3: 011
+[15:19]: rs1
+[20:24]: rs2
+([25:31]: func7)
+    [25]: rl
+    [26]: aq
+    [27:31]: 00011 
+```
+
++ The decode value always starts from high bits to low bits.
++ Decode ```QUADRANT<1:0> (2 bits)```, in case 0x03, i.e. 0b11.
+    + As we can see the Opcode part (0100011) of SC.D instruction, the ```<1:0>``` part is ```11```.
+
++ Decode ```OPCODE<6:2> (5 bits)```, in case 0x0b, i.e. 0b1011.
+    + As we can see the ```<6:2>``` bits of Opcode (01011), it is 0x0b.
+
++ Decode ```FUNCT3<14:12> (3 bits)```, in case 0x3, i.e. 0b011.
+    + As we can see the ```<14:12>``` bits of SC.D instruction is 011.
+
++ Decode ```AMOFUNCT<31:27> (5 bits)```, in case 0x3, i.e. 0b00011.
+    + As we can see the ```<31:27>``` bits of SC.D instruction is 00011.
+
+Now, we have fully decoded the instruction SC.D
+
+### How decoder decodes LR.D instruction?
+```
+LR.D (64-bit double word):
+[0:6]: Opcode: 0101111
+[7:11]: rd
+[12:14]: func3: 011
+[15:19]: rs1
+[20:24]: rs2: 00000
+([25:31]: func7)
+    [25]: rl
+    [26]: aq
+    [27:31]: 00010 
+```
+
++ The decode value always starts from high bits to low bits.
++ Decode ```QUADRANT<1:0> (2 bits)```, in case 0x03, i.e. 0b11.
+    + As we can see the Opcode part (0100011) of SC.D instruction, the ```<1:0>``` part is ```11```.
+
++ Decode ```OPCODE<6:2> (5 bits)```, in case 0x0b, i.e. 0b1011.
+    + As we can see the ```<6:2>``` bits of Opcode (01011), it is 0x0b.
+
++ Decode ```FUNCT3<14:12> (3 bits)```, in case 0x3, i.e. 0b011.
+    + As we can see the ```<14:12>``` bits of SC.D instruction is 011.
+
++ Decode ```AMOFUNCT<31:27> (5 bits)```, in case 0x2, i.e. 0b00010.
+    + As we can see the ```<31:27>``` bits of SC.D instruction is 00010.
+
+Now, we have fully decoded the instruction LR.D.
+
+### Difference between LR.D and SC.D
+Two differences:
++ ```AMOFUNCT<31:27> (5 bits)```
+    + LR.D: 00010
+    + SC.D: 00011
++ ```Rs2<24:20> (5 bits)```
+    + LR.D: 00000
+    + SC.D: other values
+
+### LR.W and SC.W - similar instructions but operate on 32-bit words
++ They have the same ```QUADRANT<1:0> (2 bits)```.
++ They have the same ```OPCODE<6:2> (5 bits)```.
++ ```FUNCT3<14:12> (3 bits)``` are different:
+    + ```010```: for 32-bit word operations.
+    + ```011```: for 64-bit double operations.
++ ```AMOFUNCT<31:27> (5 bits)``` are the same **respectively**.
+    + ```00010```: for LR.W and LR.D.
+    + ```00011```: for SC.W and SC.D.
+
+## Design of ENQCMD:
+LR_Q and SC_Q - two instructions.
+
++ Same ```QUADRANT<1:0> (2 bits)```.
++ Same ```OPCODE<6:2> (5 bits)```.
++ ```FUNCT3<14:12> (3 bits)```: I pick ```100```.
++ ```AMOFUNCT<31:27> (5 bits)``` are the same **respectively**.
+    + ```00010```: for LR.Q.
+    + ```00011```: for SC.Q.
+
++ SC_Q is an uncacheable instruction
+    + src/mem/request.hh: This file defines all the flags, including ```UNCACHEABLE```.
+
+LR_Q:
+```
+// Note: rs1 is a6 register, i.e. x16 register, 0b10000
+format:
+    00010|aq|rl|00000|rs1<5>|100|rd<5>|0101111
+aq = 1, rl = 1:
+    00010|1|1|00000|rs1<5>|100|rd<5>|0101111
+rs1 = 10000 (a6/x16 reg)
+    000101100000|10000|100|rd<5>|0101111
+rd register: s6/x22 reg, i.e. 0b10110
+    000101100000|10000|100|10110|0101111
+
+Final result:
+    00010110|00001000|01001011|00101111
+      0x16     0x08     0x4b     0x2f
+
+inline asm (little endian, needs to reverse the bytes)
+    __asm__ volatile(".byte 0x2f, 0x4b, 0x08, 0x16");
+```
+
+User testing code: **in order to make LR_Q work, must make sure the 64-byte data to be transferred is on a cache line block size boundary.** Hence, we use ```memalign()```.
+
+SC_Q:
+```
+// Note, rs1 is a6 register. Hence, when sc_q is executed, we need to make sure
+// rs6 stores the destination address already. a6, x16, i.e. 0b10000
+
+// Note, sc_q instruction does not use rs2 register. Hence we can igore those 
+// bits. For safety, I use t6/x31 (temporary register t6), i.e. 0b11111
+format:
+    00011|aq|rl|rs2<5>|rs1<5>|100|rd<5>|0101111
+aq = 1, rl = 1:
+    0001111|rs2<5>|rs1<5>|100|rd<5>|0101111
+rs1 = 10000 (a6/x16 reg)
+    0001111|rs2<5>|10000|100|rd<5>|0101111
+rs2 = 00000 (zero/x0 reg)
+    0001111|00000|10000|100|rd<5>|0101111
+rd register: s6/x22 register, i.e. 0b10111
+    0001111|00000|10000|100|10110|0101111
+
+Final result:
+    00011110|00001000|01001011|00101111
+      0x1e     0x08     0x4b    0x2f
+
+inline asm (little endian, needs to reverse the bytes)
+    __asm__ volatile(".byte 0x2f, 0x4b, 0x08, 0x1e");
+```
+
+If both bits are clear, no additional ordering constraints are imposed on the atomic memory operation. If only the aq bit is set, the atomic memory operation is treated as an acquire access,
+i.e., no following memory operations on this RISC-V hart can be observed to take place before
+the acquire memory operation. If only the rl bit is set, the atomic memory operation is treated
+as a release access, i.e., the release memory operation can not be observed to take place before
+any earlier memory operations on this RISC-V hart. If both the aq and rl bits are set, the atomic
+memory operation is sequentially consistent and cannot be observed to happen before any earlier
+memory operations or after any later memory operations in the same RISC-V hart, and can only be
+observed by any other hart in the same global order of all sequentially consistent atomic memory
+operations to the same address domain.
+
+
+
+Need a temporary 512-bit register. ENQCMD = LR_64 + SC_64
+
+
+Load-reserved instruction: LR loads a word from the address in rs1, places the
+sign-extended value in rd, and registers a reservation on the memory address.
+
+**When initiateAcc() is called, the registers already store the desired values.**
+
+In this case, Rs1 already stores the address to be read from.
+```
+Fault
+Lr_d::Lr_dMicro::initiateAcc(ExecContext *xc,
+    Trace::InstRecord *traceData) const
+{
+    // declare vars
+    Addr EA;
+    uint64_t Rs1 = 0;
+    int64_t Mem = {};
+    ;
+
+    // this function is defined in src/cpu/simple/exec_context.hh
+    // It reads the value stored in Rs1 register, which is the address to be read
+    Rs1 = xc->readIntRegOperand(this, 0);
+    ;
+    EA = Rs1;;
+
+    return initiateMemRead(xc, traceData, EA, Mem, memAccessFlags);
+}
+
+
+Fault
+Lr_d::Lr_dMicro::completeAcc(PacketPtr pkt,
+    ExecContext *xc, Trace::InstRecord *traceData) const
+{
+    int64_t Rd = 0;
+    int64_t Mem = {};
+    ;
+    ;
+
+    // defined in src/arch/generic/memhelpers.hh
+    // getMemLE() -> getMem<ByteOrder::little>(pkt, Mem, traceData)
+    // getMem(PacketPtr pkt, MemT &mem, Trace::InstRecord *traceData)
+    //     -> mem = pkt->get<MemT>(Order);
+    //     -> if (traceData) traceData->setData(mem);
+    getMemLE(pkt, Mem, traceData);
+
+    Rd = Mem;
+    ;
+
+    {
+        int64_t final_val = Rd;
+        xc->setIntRegOperand(this, 0, final_val);
+
+        if (traceData) { traceData->setData(final_val); }
+    };
+
+    return NoFault;
+}
+```
+
+
++ Need to implement a function in src/mem/packet.hh and src/mem/packet.cc that returns a 512-bit value. Current API (getMemLe()) only supports 1, 2, 4 or 8 bytes (at most uint64_t).
+
++ In file src/mem/request.hh: ```enum:FlagsType``` - the ```mem_flags``` field within each instruction of decoder.isa. Our ```ld_64``` is a cached load, but ```sc_64``` is a uncached store. There are three flags that might be useful: 
+    + ```UNCACHEABLE```: The request is to an uncacheable address.
+    + ```STRICT_ORDER```: The request is required to be strictly ordered by CPU models and is non-speculative.
+    + ```LLSC```: The request is a Load locked/store conditional.
+
+
+Call graph:
+```
+TimingSimpleCPU::advanceInst()->
+TimingSimpleCPU::fetch() ->
+    thread->mmu->translateTiming() - do address translation
+
+
+TimingSimpleCPU::completeIfetch() (src/cpu/simple/timing.cc)->
+    preExecute()
+    **initiateAcc()** -> initiateMemRead() -- does address translation
+TimingSimpleCPU::finishTranslation()
+    sendData() or sendSplitData()
+        handleReadPacket() or handleWritePacket()
+
+TimingSimpleCPU::DcachePort::recvTimingResp()
+
+
+TimingSimpleCPU::completeDataAccess()
+    **completeAcc()**
+    postExecute(): update stats, TODO: needs add ENQCMD stats in base.cc
+    advanceInst()
+```
+
+
+Corresponding generated cpp code:
+```
+Fault
+Lr_64::Lr_64Micro::initiateAcc(ExecContext *xc,
+    Trace::InstRecord *traceData) const
+{
+    // declare vars
+    Addr EA;
+    uint64_t Rs1 = 0;
+    uint64_t Mem[8] = {};
+    ;
+
+    // It reads the value stored in Rs1 register, which is the address to be read
+    Rs1 = xc->readIntRegOperand(this, 0);
+    EA = Rs1;
+
+    return initiateMemRead(xc, traceData, EA, mem, memAccessFlags);
+}
+
+
+Fault
+Lr_64::Lr_64Micro::completeAcc(PacketPtr pkt, 
+    ExecContext *xc, Trace::InstRecord *traceData) cost
+{
+    // declare vars
+
+}
+```
+
+
+To add a new register class, need to modify the following files:
+
++ **All operate on ```std::array<uint8_t, 64>``` type**.
+
++ Add the real register
+    + src/cpu/simple_thread.hh: in class SimpleThread.
++ Add the Operand type (possibly only for o3 cpu) (not necessary)
+    + src/arch/isa_parser/operand_types.py
++ Implementation of function:
+    + src/cpu/checker/cpu.hh: read/setS12RegOperand()
+    + src/cpu/exec_context.hh: function definition
+    + src/cpu/simple/exec_context.hh: read/setS12RegOperand()
+        + src/cpu/simple_thread.hh: read/setS12Reg()
+    + src/cpu/minor/exec_context.hh: read/setS12RegOperand()
+    + src/cpu/o3/dyn_inst.hh: only the function prototypes due to virtual function definition in src/cpu/exec_context.hh
+
+To see the result of instruction:
+```
+./build/RISCV/gem5.opt --debug-flags=S12Regs ./configs/learning_gem5/part1/two_level.py ./tests/test-progs/hello/bin/riscv/linux/hello
+```
+
+To add a new instruction, need to modify the following files:
++ Decoder file
+    + src/arch/riscv/isa/decoder.isa
++ Instruction formats
+    + If it is a memory reference instruction, needs to define 
+        + templates: initiateAcc(), completeAcc() and execute().
+        + format of the instruction
+        + e.g. src/arch/riscv/isa/formats/amo.isa
++ Instruction operands
+    + Given an instruction, we need to know the instruction operands, e.g. register(s) bits, including rs1, rs2 and rd. 
+    + src/arch/riscv/insts/amo.hh
+        + Define the instruction class, as well as ```generateDisassembly()```.
+    + src/arch/riscv/insts/amo.cc
+        + Implementation of ```generateDisassembly()```.
+
+Error:
+```
+/home/yusen/gem5/build/RISCV/base/cprintf_formats.hh:100: 
+multiple definition of `gem5::cp::operator<<(std::ostream&, std::array<unsigned char, 64ul>)'; 
+
+build/RISCV/systemc/utils/sc_report.o:
+/home/yusen/gem5/build/RISCV/base/cprintf_formats.hh:100: first defined here
+```
+Solution: ```static inline``` when defining the operator ```<<``` overloading
+
+
+
+Store-conditional instruction call graph:
+
+```StoreCondInitiateAcc()```:
++ ```writeMemTimingLE()```: src/arch/generic/memhelpers.hh
+    + ```writeMemTiming<ByteOrder::little>()``` -> ```writeMemTiming()```
+        + ```(ExecContext *)xc->writeMem()```: src/cpu/simple/timing.cc
+            + ```WholeTranslationState()```
+            + ```DataTranslation<TimingSimpleCPU *>()```
+            + ```thread->mmu->translateTiming()```
+
++ ```finishTranslation()```: src/cpu/simple/timing.cc
+    + ```sendData()```: src/cpu/simple/timing.cc
+        + if read access, then ```handleReadPacket(pkt)```
+        + else (write access), then
+            + ```do_access = handleLockedWrite()```: src/arch/riscv/isa.cc
+                + If request is uncacheable, then ```req->setExtraData(2)```, return true
+            + if ```do_access == true```, then ```handleWritePacket()``` 
+
+./cpu/simple/atomic.cc:                    req->setExtraData(*res);
+./cpu/simple/timing.cc:            req->setExtraData(*res);
+./mem/ruby/system/HTMSequencer.cc:                pkt->req->setExtraData(0);
+./mem/ruby/system/Sequencer.cc:                seq_req.pkt->req->setExtraData(success ? 1 : 0);
+./mem/cache/base.cc:        pkt->req->setExtraData(0);
+./mem/cache/cache.cc:                tgt_pkt->req->setExtraData(0);
+./mem/cache/cache_blk.hh:            req->setExtraData(success ? 1 : 0);
+./mem/request.hh:    setExtraData(uint64_t extraData)
+./mem/abstract_mem.cc:        req->setExtraData(allowStore ? 1 : 0);
+./mem/abstract_mem.hh:                req->setExtraData(0);
